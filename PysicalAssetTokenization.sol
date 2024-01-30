@@ -9,6 +9,7 @@ contract TokenTokenWithRolesAndFeedback {
         string  name;           // The name of the token 
         string  description;    // A brief description of the token 
         uint256 value;          // The value of the token in wei 
+        uint256 WTquote;        // The binded amout for WT service
         address originator;     // The address of the Vendor who started the tokenization
         address warehouse;      // The address of the WarehouseTokenizator who custodies the token 
         address owner;          // The current owner of the Token
@@ -17,6 +18,7 @@ contract TokenTokenWithRolesAndFeedback {
 
     struct Vendor {
         string name;
+        string email;
         uint256 reputation;
         bool active;
     }
@@ -43,6 +45,9 @@ contract TokenTokenWithRolesAndFeedback {
     // A mapping from address to an array of ratings
     mapping (address => uint256[]) public ratings;
 
+    // A mapping from token ID to fixed selling price
+    mapping (uint256 => uint256) public tokenSellingPrice;
+
     // A counter for generating vendor IDs
     uint256 public vendorCounter;
 
@@ -61,6 +66,8 @@ contract TokenTokenWithRolesAndFeedback {
     // An event to emit when an token is created by a vendor
     event TokenCreated(uint256 indexed tokenId, string name, string description, uint256 value, address owner);
 
+    event WTselected(uint256 _tokenID, address _WTaddress, uint256 _WTquote);
+
     // An event to emit when a token is activated by a WarehouseTokenizator
     event TokenActivated(uint256 indexed tokenId, address WarehouseTokenizator, address owner);
 
@@ -77,6 +84,9 @@ contract TokenTokenWithRolesAndFeedback {
 
     // An event to emit when a rating is given by a participant
     event RatingGiven(address from, address to, uint256 rating);
+
+    // An event to emit when the selling price is set for a token
+    event TokenSellingPriceSet(uint256 indexed tokenId, uint256 sellingPrice);
 
     // A modifier to check if caller is a vendor
     modifier onlyVendor() {
@@ -104,18 +114,25 @@ contract TokenTokenWithRolesAndFeedback {
 
     // A modifier to check if an token is active
     modifier onlyActiveToken(uint256 _tokenId) {
-        require(tokens[_tokenId].active == true, "The token is not active");
+        require(tokens[_tokenId].active == true, "This token is NOT active");
+        _;
+    }
+
+    // A modifier to check if an token is NOT active
+    modifier onlyUnactiveToken(uint256 _tokenId) {
+        require(tokens[_tokenId].active == false, "This token is active");
         _;
     }
 
     // A function to register and activate a new vendor
-    function vendorRegistration(string memory _name) public returns (uint256) {
+    function vendorRegistration(string memory _name, string memory _email) public returns (uint256) {
         // Increment the vendor counter
         vendorCounter++;
 
         // Create a new vendor struct activated by dafault
         Vendor memory newVendor = Vendor({
             name: _name,
+            email: _email,
             reputation: 0,
             active: true
         }); 
@@ -154,139 +171,185 @@ contract TokenTokenWithRolesAndFeedback {
     }
 
     // A function to create a new token by a vendor
-    function createToken(string memory _name, string memory _description, uint256 _value) public onlyVendor() returns (uint256) {
-        // Increment the token counter
-        tokenCounter++;
+    function createToken(
+        string memory _name, 
+        string memory _description, 
+        uint256 _value) 
+        public 
+        onlyVendor() 
+        returns (uint256) 
+        {
+            // Increment the token counter
+            tokenCounter++;
 
-        // Create a new token struct with the vendor as the owner and no warehouse assigned yet
-        Token memory newToken = Token({
-            name: _name,
-            description: _description,
-            value: _value,
-            originator: msg.sender,
-            warehouse: address(0),
-            owner: msg.sender,
-            active: false
-        });
+            // Create a new token struct with the vendor as the owner and no warehouse assigned yet
+            Token memory newToken = Token({
+                name: _name,
+                description: _description,
+                value: _value,
+                WTquote: 0,
+                originator: msg.sender,
+                warehouse: address(0),
+                owner: msg.sender,
+                active: false
+            });
 
-        // Store the token in the mapping
-        tokens[tokenCounter] = newToken;
+            // Store the token in the mapping
+            tokens[tokenCounter] = newToken;
 
-        // Emit an event
-        emit TokenCreated(tokenCounter, _name, _description, _value, msg.sender);
+            // Emit an event
+            emit TokenCreated(tokenCounter, _name, _description, _value, msg.sender);
 
-        // Return the token ID
-        return tokenCounter;
+            // Return the token ID
+            return tokenCounter;
     }
 
-    // A function to receive an existing token by a WarehouseTokenizator and create a new token for it
-    function receiveToken(uint256 _tokenId) public onlyWarehouseTokenizator() onlyActiveToken(_tokenId) {
+    // Function to get the EIP-191 signed hash of the concatenation of the two parameters
+    function getEIP191SignedHash(uint256 _tokenId, uint256 quote) public pure returns (bytes32) {
+        // Creating the message string with the EIP-191 prefix
+        string memory message = string(abi.encodePacked("\x19Ethereum Signed Message:\n32", _tokenId, quote));
+
+        // Hashing the message string
+        bytes32 messageHash = keccak256(abi.encodePacked(message));
+
+        // Returning the hashed message and the address of the caller
+        return messageHash;
+    }
+
+    // Function to verify the signature
+    // _signature parameter have to be calculated off-line,
+    // like on front-end through web3.eth.sign(messageHash, signerAddress) 
+    function verifySignature(bytes32 _messageHash, bytes memory _signature, address _signer) public pure returns (bool) {
+        // Recovering the public key from the signature
+        address recoveredAddress = recoverSigner(_messageHash, _signature);
+
+        // Verifying if the recovered address matches the expected signer
+        return recoveredAddress == _signer;
+    }
+
+    // Internal function to recover the signer's address from a message hash and signature
+    function recoverSigner(bytes32 _messageHash, bytes memory _signature) internal pure returns (address) {
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+
+        // Extracting the components of the signature
+        assembly {
+            r := mload(add(_signature, 32))
+            s := mload(add(_signature, 64))
+            v := byte(0, mload(add(_signature, 96)))
+        }
+
+        // Adjusting the value of v (EIP-155)
+        if (v < 27) {
+            v += 27;
+        }
+
+        // Recovering the public key from the signature
+        return ecrecover(_messageHash, v, r, s);
+    }
+
+    function WTselection (
+        uint256 _tokenId, 
+        bytes32 _messageHash, 
+        bytes memory _signature, 
+        address _WTaddress
+        ) external payable
+        onlyWarehouseTokenizator()
+        onlyUnactiveToken(_tokenId) 
+        {
+            require(_messageHash == getEIP191SignedHash(_tokenId, msg.value));
+            require(verifySignature(_messageHash, _signature, _WTaddress));
+
+            tokens[_tokenId].warehouse  = _WTaddress;
+            tokens[_tokenId].WTquote    = msg.value;
+
+            // Emit WT seleted event to notify wich WT is binded and unbind the other WT
+            emit WTselected(_tokenId, _WTaddress, msg.value);
+    }
+
+    // A function to activate an existing token by a WarehouseTokenizator
+    // this function must be called by WT when pysical asset is received and checked
+    function activateToken(
+        uint256 _tokenId
+        ) external 
+        onlyWarehouseTokenizator()
+        onlyUnactiveToken(_tokenId)
+        {
+            require(tokens[_tokenId].warehouse == msg.sender);
         
-        // first check that this request is valid through integrity has of signed WT proposal!
+            // Make the token active
+            tokens[_tokenId].owner = tokens[_tokenId].originator;
+            tokens[_tokenId].active = true;
 
-        // this function must be payable, vendor must send the entire quotation requested by WT
-
- // EXAMPLE OF HOW TO SEND AMOUNT TO ANOTHER ADDRESS
- /*       
-    function sendViaCall(address payable _to) public payable {
-        // Call returns a boolean value indicating success or failure.
-        // This is the current recommended method to use.
-        (bool sent, bytes memory data) = _to.call{value: msg.value}("");
-        require(sent, "Failed to send Ether");
+            // Emit the token activation event
+            emit TokenActivated(_tokenId, tokens[_tokenId].warehouse, tokens[_tokenId].owner);
     }
-*/
-        // once made all of these checks, THEN DO THE FOLLOWING!
-        
-        // Make the token active
-        tokens[_tokenId].warehouse = msg.sender;
-        tokens[_tokenId].owner = tokens[_tokenId].originator;
-        tokens[_tokenId].active = true;
+    
+    // A function for the token owner to set a fixed selling price for their token
+    function setTokenSellingPrice(uint256 _tokenId, uint256 _sellingPrice) external onlyTokenOwner(_tokenId) onlyActiveToken(_tokenId) {
+        // Set the selling price for the token
+        tokenSellingPrice[_tokenId] = _sellingPrice;
 
         // Emit an event
-        emit TokenActivated(_tokenId, tokens[_tokenId].warehouse, tokens[_tokenId].owner);
-
+        emit TokenSellingPriceSet(_tokenId, _sellingPrice);
     }
 
-    // A function to transfer an existing token to another address by a trader
-    function transferToken(uint256 _tokenId, address _to) public onlyTokenOwner(_tokenId) onlyActiveToken(_tokenId) {
-        // Update the owner of the token to be the recipient of this function
-        tokens[_tokenId].owner = _to;
+    // A function for a buyer to purchase a token at the fixed selling price
+    function purchaseToken(uint256 _tokenId) external payable onlyActiveToken(_tokenId) {
+        // Check if the token has a fixed selling price
+        require(tokenSellingPrice[_tokenId] > 0, "Token does not have a fixed selling price.");
+
+        // Check if the sent value matches the selling price
+        require(msg.value == tokenSellingPrice[_tokenId], "Incorrect payment amount.");
+
+        address _previousOwner = tokens[_tokenId].owner;
+
+        // Release the payment to the token owner
+        payable(_previousOwner).transfer(msg.value);
+
+        // Transfer ownership of the token to the buyer
+        tokens[_tokenId].owner = msg.sender;
 
         // Emit an event
-        emit TokenTransferred(_tokenId, msg.sender, _to);
+        emit TokenTransferred(_tokenId, _previousOwner, tokens[_tokenId].owner);
     }
 
     // Redemption request
-    function redemptionRequest(uint256 _tokenId) public onlyTokenOwner(_tokenId) {
+    function redemptionRequest(
+        uint256 _tokenId
+        ) public 
+        onlyTokenOwner(_tokenId) 
+        {
+            // To request the asset redemption, owner transfer the token ownership to the warehouse who holds the asset
+            tokens[_tokenId].owner = tokens[_tokenId].warehouse;
 
-        // To request the asset redemption, owner transfer the token ownership to the warehouse who holds the asset
-        tokens[_tokenId].owner = tokens[_tokenId].warehouse;
-
-        // aggiungere il tempo
-        emit RedemptionRequested(_tokenId, tokens[_tokenId].warehouse);
+            // aggiungere il tempo
+            emit RedemptionRequested(_tokenId, tokens[_tokenId].warehouse);
     }
 
-    // A function to burn an existing token
-    function burnToken(uint256 _tokenId) public onlyTokenWarehouse(_tokenId) onlyActiveToken(_tokenId) onlyTokenOwner(_tokenId) {
+    // A function to disable an existing token
+    function burnToken(
+        uint256 _tokenId
+        ) public 
+        onlyTokenWarehouse(_tokenId) 
+        onlyActiveToken(_tokenId) 
+        onlyTokenOwner(_tokenId)
+        {
         
-        // This action is only available when redemption has requested and warehouse provides proof of delivery
-        require(tokens[_tokenId].owner == tokens[_tokenId].warehouse);
+            // This action is only available when redemption has requested and warehouse provides proof of delivery
+            require(tokens[_tokenId].owner == tokens[_tokenId].warehouse);
 
-        // Performs proof of delivery here
+            // Performs proof of delivery here
 
-        // Release the payment
+            // Release the payment
 
-        // Release feedbacks
+            // Release feedbacks
 
-        // Unactivate the tokenId
-        tokens[_tokenId].active = false;
+            // Unactivate the tokenId
+            tokens[_tokenId].active = false;
 
-        // Emit an event
-        emit TokenReleased(_tokenId, tokens[_tokenId].warehouse);
+            // Emit an event
+            emit TokenReleased(_tokenId, tokens[_tokenId].warehouse);
     }
-/*
-    // A function to give a rating to another participant after a transaction
-    function giveRating(address _to, uint256 _rating) public {
-        // Check if the rating is between 1 and 5 (inclusive)
-        require(_rating >= 1 && _rating <= 5, "The rating must be between 1 and 5");
-
-        // Check if the caller and the recipient are involved in a transaction
-        bool valid = false;
-        for (uint256 i = 1; i <= tokenCounter; i++) {
-    //        if (tokens[i].active == false && ((tokens[i].vendor == msg.sender && tokens[i].warehouse == _to) || (tokens[i].warehouse == msg.sender && tokens[i].vendor == _to))) {
-                valid = true;
-                break;
-            }
- //       }
- //       for (uint256 j = 1; j <= tokenCounter; j++) {
- //           if (tokens[j].active == false && ((tokens[j].owner == msg.sender && tokens[tokens[j].tokenId].warehouse == _to) || (tokens[j].owner == _to && tokens[tokens[j].tokenId].warehouse == msg.sender))) {
- //               valid = true;
- //               break;
-            }
- //       }
- //       require(valid == true, "The caller and the recipient are not involved in a transaction");
-
-        // Append the rating to the array of ratings for the recipient
- //       ratings[_to].push(_rating);
-
-        // Emit an event
- //       emit RatingGiven(msg.sender, _to, _rating);
- //   }
-
-    // A function to get the average rating for an address
-    function getAverageRating(address _address) public view returns (uint256) {
-        // Check if the address has any ratings
-        require(ratings[_address].length > 0, "The address has no ratings");
-
-        // Calculate the sum of ratings for the address
-        uint256 sum = 0;
-        for (uint256 i = 0; i < ratings[_address].length; i++) {
-            sum += ratings[_address][i];
-        }
-
-        // Calculate and return the average rating for the address
-        uint256 average = sum / ratings[_address].length;
-        return average;
-    }
-    */
 }
