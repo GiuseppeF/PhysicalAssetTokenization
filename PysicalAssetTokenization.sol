@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
 // A contract for tokenizing physical tokens with three roles and feedback management 
-contract TokenTokenWithRolesAndFeedback { 
+contract TokenTokenWithRolesAndFeedback is ReentrancyGuard { 
+
+    // Global variables
+    uint256 internal maxSelectionTime = 1*1 days;
+    uint256 internal maxServiceTime = 999*1 days;
 
     // A struct to store the details of each token 
     struct Token { 
@@ -10,12 +16,14 @@ contract TokenTokenWithRolesAndFeedback {
         string  description;    // A brief description of the token 
         uint256 value;          // The value of the token in wei 
         uint256 WTquote;        // The binded amout for WT service
-        address originator;     // The address of the Vendor who started the tokenization
+        uint256 timeValidity;   // This number define the custodial time service that start at the activation
+        address originator;     // The address of the Vendor who started the tokenization process
         address warehouse;      // The address of the WarehouseTokenizator who custodies the token 
         address owner;          // The current owner of the Token
         bool    active;         // Whether the token is active or not 
     }
 
+    // A struct to store the details of each registered Vendor
     struct Vendor {
         string name;
         string email;
@@ -23,8 +31,10 @@ contract TokenTokenWithRolesAndFeedback {
         bool active;
     }
 
+    // A struct to store the details of each registered WarehouseTokenizator
     struct WarehouseTokenizator {
         string name;
+        string email;
         string latlon;
         uint256 reputation;
         bool active;
@@ -32,6 +42,9 @@ contract TokenTokenWithRolesAndFeedback {
 
     // A mapping from token struct to current owner address
     mapping (uint256 => address) public tokenOwner;
+
+    // A mapping to link tokenId to the token creation block
+    mapping(uint256 => uint256) public requestTime;
 
     // A mapping from address to vendors struct
     mapping (address => Vendor) public vendors;
@@ -47,6 +60,10 @@ contract TokenTokenWithRolesAndFeedback {
 
     // A mapping from token ID to fixed selling price
     mapping (uint256 => uint256) public tokenSellingPrice;
+
+    // Mapping from address to an array of tokenId to track feedbacks
+    mapping (address => uint256[]) public negativeFeedback;
+    mapping (address => uint256[]) public positiveFeedback;
 
     // A counter for generating vendor IDs
     uint256 public vendorCounter;
@@ -88,6 +105,9 @@ contract TokenTokenWithRolesAndFeedback {
     // An event to emit when the selling price is set for a token
     event TokenSellingPriceSet(uint256 indexed tokenId, uint256 sellingPrice);
 
+    event negativeFeedbackReleased(uint256 indexed _tokenId, address from, address to);
+    event positiveFeedbackReleased(uint256 indexed _tokenId, address from, address to);
+
     // A modifier to check if caller is a vendor
     modifier onlyVendor() {
         require(vendors[msg.sender].active == true, "Caller is NOT a vendor");
@@ -114,7 +134,11 @@ contract TokenTokenWithRolesAndFeedback {
 
     // A modifier to check if an token is active
     modifier onlyActiveToken(uint256 _tokenId) {
-        require(tokens[_tokenId].active == true, "This token is NOT active");
+        require(
+            tokens[_tokenId].active == true
+            &&
+            tokens[_tokenId].timeValidity  > block.timestamp,
+             "This token is NOT active");
         _;
     }
 
@@ -123,6 +147,8 @@ contract TokenTokenWithRolesAndFeedback {
         require(tokens[_tokenId].active == false, "This token is active");
         _;
     }
+
+// PHASE-0: Registration
 
     // A function to register and activate a new vendor
     function vendorRegistration(string memory _name, string memory _email) public returns (uint256) {
@@ -148,13 +174,20 @@ contract TokenTokenWithRolesAndFeedback {
     }
 
     // A function to register and activate a new warehouseTokenizator
-    function warehouseTokenizatorRegistration(string memory _name, string memory _latlon) public returns (uint256) {
+    function warehouseTokenizatorRegistration(
+        string memory _name, 
+        string memory _email,
+        string memory _latlon
+        ) public 
+        returns (uint256) 
+    {
         // Increment the token counter
         warehouseTokenizatorCounter++;
 
         // Create a new warehouseTokenizator struct activated by dafault
         WarehouseTokenizator memory newWarehouseTokenizator = WarehouseTokenizator({
             name: _name,
+            email: _email,
             latlon: _latlon,
             reputation: 0,
             active: true
@@ -170,15 +203,18 @@ contract TokenTokenWithRolesAndFeedback {
         return warehouseTokenizatorCounter;
     }
 
+// PHASE-1: Tokenization
+
     // A function to create a new token by a vendor
     function createToken(
         string memory _name, 
         string memory _description, 
-        uint256 _value) 
+        uint256 _value,
+        uint256 _timeValidity) 
         public 
         onlyVendor() 
         returns (uint256) 
-        {
+    {
             // Increment the token counter
             tokenCounter++;
 
@@ -187,6 +223,7 @@ contract TokenTokenWithRolesAndFeedback {
                 name: _name,
                 description: _description,
                 value: _value,
+                timeValidity: _timeValidity,
                 WTquote: 0,
                 originator: msg.sender,
                 warehouse: address(0),
@@ -197,6 +234,8 @@ contract TokenTokenWithRolesAndFeedback {
             // Store the token in the mapping
             tokens[tokenCounter] = newToken;
 
+            requestTime[tokenCounter]= block.timestamp;
+
             // Emit an event
             emit TokenCreated(tokenCounter, _name, _description, _value, msg.sender);
 
@@ -204,8 +243,214 @@ contract TokenTokenWithRolesAndFeedback {
             return tokenCounter;
     }
 
-    // Function to get the EIP-191 signed hash of the concatenation of the two parameters
-    function getEIP191SignedHash(uint256 _tokenId, uint256 quote) public pure returns (bytes32) {
+    function WTselection (
+        uint256 _tokenId, 
+        bytes32 _messageHash, 
+        bytes memory _signature, 
+        address _WTaddress
+        ) external payable
+        onlyUnactiveToken(_tokenId) 
+    {
+            require(msg.value > 0, "Zero Ether is not allowed");
+            require(tokens[_tokenId].originator == msg.sender, "You are not the originator");
+            require(_messageHash == getEIP191SignedHash(_tokenId, msg.value), "Invalid message hash");
+            require(verifySignature(_messageHash, _signature, _WTaddress), "Invalid signature");
+            require(block.timestamp < requestTime[_tokenId]+maxSelectionTime);
+
+            tokens[_tokenId].warehouse  = _WTaddress;
+            tokens[_tokenId].WTquote    = msg.value;
+
+            // Emit WT seleted event to notify wich WT is binded and unbind the other WT
+            emit WTselected(_tokenId, _WTaddress, msg.value);
+    }
+
+    // A function to activate an existing token by a WarehouseTokenizator
+    // this function must be called by WT when pysical asset is received and checked
+    function activateToken(
+        uint256 _tokenId
+        ) external 
+        onlyWarehouseTokenizator()
+        onlyUnactiveToken(_tokenId)
+    {
+            require(tokens[_tokenId].warehouse == msg.sender, "You are not the selected WarehouseTokenizator for this tokenId");
+        
+            // Make the token active
+            tokens[_tokenId].owner          = tokens[_tokenId].originator;
+            tokens[_tokenId].timeValidity   = block.timestamp + (tokens[_tokenId].timeValidity * 1 days);  // Days of validity
+            tokens[_tokenId].active         = true;
+
+            // set positive feedback to the originator
+            setPositiveFeedback(_tokenId, tokens[_tokenId].originator);
+
+            // Emit the token activation event
+            emit TokenActivated(_tokenId, tokens[_tokenId].warehouse, tokens[_tokenId].owner);
+    }
+
+// PHASE-2 Trading
+
+    // A function for the token owner to set a fixed selling price for their token
+    function setTokenSellingPrice(
+        uint256 _tokenId, 
+        uint256 _sellingPrice
+        ) external 
+        onlyTokenOwner(_tokenId) 
+        onlyActiveToken(_tokenId) 
+    {
+        // Set the selling price for the token
+        tokenSellingPrice[_tokenId] = _sellingPrice;
+
+        // Emit an event
+        emit TokenSellingPriceSet(_tokenId, _sellingPrice);
+    }
+
+    // A function for a buyer to purchase a token at the fixed selling price
+    function purchaseToken(
+        uint256 _tokenId
+        ) external payable nonReentrant
+        onlyActiveToken(_tokenId) 
+    {
+        // Check if the token has a fixed selling price
+        require(tokenSellingPrice[_tokenId] > 0, "Token does not have a fixed selling price.");
+
+        // Check if the sent value matches the selling price
+        require(msg.value == tokenSellingPrice[_tokenId], "Incorrect payment amount.");
+
+        address _previousOwner = tokens[_tokenId].owner;
+
+        // Transfer ownership of the token to the buyer
+        tokens[_tokenId].owner = msg.sender;
+
+        // Emit an event
+        emit TokenTransferred(_tokenId, _previousOwner, tokens[_tokenId].owner);
+
+        // Release the payment to the token owner as last operation
+        payable(_previousOwner).transfer(msg.value);
+    }
+
+// PHASE-3 Redemption
+
+    // Redemption request
+    function redemptionRequest(
+        uint256 _tokenId
+        ) public 
+        onlyTokenOwner(_tokenId) 
+        onlyActiveToken(_tokenId) 
+    {
+            // To request the asset redemption, owner transfer the token ownership to the warehouse who holds the asset
+            tokens[_tokenId].owner = tokens[_tokenId].warehouse;
+
+            // aggiungere il tempo
+            emit RedemptionRequested(_tokenId, tokens[_tokenId].warehouse);
+    }
+
+    // A function to disable an existing token
+    function burnToken(
+        uint256 _tokenId
+        ) public nonReentrant
+        onlyTokenWarehouse(_tokenId) 
+        onlyActiveToken(_tokenId) 
+        onlyTokenOwner(_tokenId)
+    {
+        
+            // This action is only available when redemption has requested and warehouse provides proof of delivery
+            require(tokens[_tokenId].owner == tokens[_tokenId].warehouse);
+            require(tokens[_tokenId].warehouse == msg.sender);
+            // Performs proof of delivery here
+
+            // Release feedbacks
+            setPositiveFeedback(_tokenId, msg.sender);
+
+            // Unactivate the tokenId
+            tokens[_tokenId].active = false;
+
+            // Release the payment
+            withdrawQuote(_tokenId);
+
+            // Emit the release event
+            emit TokenReleased(_tokenId, tokens[_tokenId].warehouse);
+    }
+
+// UTILITY FUNCTIONS
+
+    // Function to withdraw the quote amount associated with a token
+    function withdrawQuote(
+        uint256 _tokenId
+        ) internal
+        onlyTokenWarehouse(_tokenId) 
+        onlyUnactiveToken(_tokenId) 
+        onlyTokenOwner(_tokenId) 
+    {
+        // Ensure that the token has a WarehouseTokenizator and a quote amount
+        require(tokens[_tokenId].warehouse != address(0), "No WarehouseTokenizator selected for this token");
+        require(tokens[_tokenId].WTquote > 0, "No quote amount available for withdrawal");
+
+        // Store the quote amount in a variable
+        uint256 quoteAmount = tokens[_tokenId].WTquote;
+
+        // Reset the quote amount to zero to prevent re-entry attacks
+        tokens[_tokenId].WTquote = 0;
+
+        // Transfer the quote amount to the token owner (msg.sender)
+        payable(msg.sender).transfer(quoteAmount);
+    }
+
+
+    // Function to release negative feedback.
+    // This function can only be called from external because positive feedback release is a manual action
+    function setNegativeFeedback(
+        uint256 _tokenId
+        ) external onlyActiveToken(_tokenId)
+        returns (bool success)
+    {
+        // inserire un controllo che il richiedente è nella posizione di poter chiedere un feedback negativo
+        // inserire le altre azioni (es. se trasferire quote al richiedente del feedback negativo e disabilitare il token)
+       negativeFeedback[tokens[_tokenId].warehouse].push(_tokenId);
+       // Disable the token
+       tokens[_tokenId].active = false;
+       
+       emit negativeFeedbackReleased(_tokenId, msg.sender, tokens[_tokenId].warehouse);
+       return true;
+    }
+
+    // Function to release positive feedback.
+    // This function can not be called from external because positive feedback release is an automated action
+    function setPositiveFeedback(
+        uint256 _tokenId,
+        address _to
+        ) internal onlyActiveToken(_tokenId)
+        returns (bool success)
+    {
+        require(tokens[_tokenId].warehouse == msg.sender || tokens[_tokenId].originator == msg.sender);
+        
+        positiveFeedback[_to].push(_tokenId);
+       
+        emit positiveFeedbackReleased(_tokenId, msg.sender, _to);
+        return true;
+    }
+
+    function getNegativeFeedbacks(
+        address _address
+        ) external view 
+        returns (uint[] memory) 
+    {
+        return negativeFeedback[_address];
+    }
+
+    function getPositiveFeedbacks(
+        address _address
+        ) external view 
+        returns (uint[] memory) 
+    {
+        return positiveFeedback[_address];
+    }
+
+    // Function to get the EIP-191 signed hash of the concatenation of the two parameters _tokenId+quote
+    function getEIP191SignedHash(
+        uint256 _tokenId, 
+        uint256 quote
+        ) public pure 
+        returns (bytes32) 
+    {
         // Creating the message string with the EIP-191 prefix
         string memory message = string(abi.encodePacked("\x19Ethereum Signed Message:\n32", _tokenId, quote));
 
@@ -219,7 +464,13 @@ contract TokenTokenWithRolesAndFeedback {
     // Function to verify the signature
     // _signature parameter have to be calculated off-line,
     // like on front-end through web3.eth.sign(messageHash, signerAddress) 
-    function verifySignature(bytes32 _messageHash, bytes memory _signature, address _signer) public pure returns (bool) {
+    function verifySignature(
+        bytes32 _messageHash, 
+        bytes memory _signature, 
+        address _signer
+        ) public pure 
+        returns (bool) 
+    {
         // Recovering the public key from the signature
         address recoveredAddress = recoverSigner(_messageHash, _signature);
 
@@ -228,7 +479,12 @@ contract TokenTokenWithRolesAndFeedback {
     }
 
     // Internal function to recover the signer's address from a message hash and signature
-    function recoverSigner(bytes32 _messageHash, bytes memory _signature) internal pure returns (address) {
+    function recoverSigner(
+        bytes32 _messageHash, 
+        bytes memory _signature
+        ) internal pure 
+        returns (address) 
+    {
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -249,107 +505,10 @@ contract TokenTokenWithRolesAndFeedback {
         return ecrecover(_messageHash, v, r, s);
     }
 
-    function WTselection (
-        uint256 _tokenId, 
-        bytes32 _messageHash, 
-        bytes memory _signature, 
-        address _WTaddress
-        ) external payable
-        onlyWarehouseTokenizator()
-        onlyUnactiveToken(_tokenId) 
-        {
-            require(_messageHash == getEIP191SignedHash(_tokenId, msg.value));
-            require(verifySignature(_messageHash, _signature, _WTaddress));
-
-            tokens[_tokenId].warehouse  = _WTaddress;
-            tokens[_tokenId].WTquote    = msg.value;
-
-            // Emit WT seleted event to notify wich WT is binded and unbind the other WT
-            emit WTselected(_tokenId, _WTaddress, msg.value);
-    }
-
-    // A function to activate an existing token by a WarehouseTokenizator
-    // this function must be called by WT when pysical asset is received and checked
-    function activateToken(
-        uint256 _tokenId
-        ) external 
-        onlyWarehouseTokenizator()
-        onlyUnactiveToken(_tokenId)
-        {
-            require(tokens[_tokenId].warehouse == msg.sender);
-        
-            // Make the token active
-            tokens[_tokenId].owner = tokens[_tokenId].originator;
-            tokens[_tokenId].active = true;
-
-            // Emit the token activation event
-            emit TokenActivated(_tokenId, tokens[_tokenId].warehouse, tokens[_tokenId].owner);
-    }
-    
-    // A function for the token owner to set a fixed selling price for their token
-    function setTokenSellingPrice(uint256 _tokenId, uint256 _sellingPrice) external onlyTokenOwner(_tokenId) onlyActiveToken(_tokenId) {
-        // Set the selling price for the token
-        tokenSellingPrice[_tokenId] = _sellingPrice;
-
-        // Emit an event
-        emit TokenSellingPriceSet(_tokenId, _sellingPrice);
-    }
-
-    // A function for a buyer to purchase a token at the fixed selling price
-    function purchaseToken(uint256 _tokenId) external payable onlyActiveToken(_tokenId) {
-        // Check if the token has a fixed selling price
-        require(tokenSellingPrice[_tokenId] > 0, "Token does not have a fixed selling price.");
-
-        // Check if the sent value matches the selling price
-        require(msg.value == tokenSellingPrice[_tokenId], "Incorrect payment amount.");
-
-        address _previousOwner = tokens[_tokenId].owner;
-
-        // Release the payment to the token owner
-        payable(_previousOwner).transfer(msg.value);
-
-        // Transfer ownership of the token to the buyer
-        tokens[_tokenId].owner = msg.sender;
-
-        // Emit an event
-        emit TokenTransferred(_tokenId, _previousOwner, tokens[_tokenId].owner);
-    }
-
-    // Redemption request
-    function redemptionRequest(
-        uint256 _tokenId
-        ) public 
-        onlyTokenOwner(_tokenId) 
-        {
-            // To request the asset redemption, owner transfer the token ownership to the warehouse who holds the asset
-            tokens[_tokenId].owner = tokens[_tokenId].warehouse;
-
-            // aggiungere il tempo
-            emit RedemptionRequested(_tokenId, tokens[_tokenId].warehouse);
-    }
-
-    // A function to disable an existing token
-    function burnToken(
-        uint256 _tokenId
-        ) public 
-        onlyTokenWarehouse(_tokenId) 
-        onlyActiveToken(_tokenId) 
-        onlyTokenOwner(_tokenId)
-        {
-        
-            // This action is only available when redemption has requested and warehouse provides proof of delivery
-            require(tokens[_tokenId].owner == tokens[_tokenId].warehouse);
-
-            // Performs proof of delivery here
-
-            // Release the payment
-
-            // Release feedbacks
-
-            // Unactivate the tokenId
-            tokens[_tokenId].active = false;
-
-            // Emit an event
-            emit TokenReleased(_tokenId, tokens[_tokenId].warehouse);
+    // Fallback function to avoid directly receiving payment, so when payable function are not called
+    fallback() 
+    external 
+    {
+        revert("This contract does not accept Ether transactions.");
     }
 }
