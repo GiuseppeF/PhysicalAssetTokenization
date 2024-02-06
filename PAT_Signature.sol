@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 contract PAT_Signature {
+
     function getMessageHash(
         uint _tokenId,
         uint _quote
@@ -9,6 +10,13 @@ contract PAT_Signature {
         return keccak256(abi.encodePacked(_tokenId, _quote));
     }
     
+    function getMessageHash(
+        uint _tokenId,
+        bytes32 _nonce
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(_tokenId, _nonce));
+    }
+
     function getEthSignedMessageHash(
         bytes32 _messageHash
     ) public pure returns (bytes32) {
@@ -26,6 +34,16 @@ contract PAT_Signature {
     ) public pure returns (bool) {
         bytes32 messageHash = getMessageHash(_tokenId, _quote);
         bytes32 ethSignedMessageHash = getEthSignedMessageHash(messageHash);
+
+        return recoverSigner(ethSignedMessageHash, signature) == _signer;
+    }
+
+    function verify(
+        address _signer,
+        bytes32 _messageHash,
+        bytes memory signature
+    ) public pure returns (bool) {
+        bytes32 ethSignedMessageHash = getEthSignedMessageHash(_messageHash);
 
         return recoverSigner(ethSignedMessageHash, signature) == _signer;
     }
@@ -53,5 +71,15 @@ contract PAT_Signature {
             v := byte(0, mload(add(sig, 96)))
         }
         // implicitly return (r, s, v)
+    }
+
+    function generateRandomNonce(uint256 _tokenId) internal view returns (bytes32) {
+        uint256 blockNumber = block.number;
+        uint256 timestamp = block.timestamp;
+        address sender = msg.sender;
+        
+        bytes32 nonce = keccak256(abi.encodePacked(_tokenId, blockNumber, timestamp, sender));
+        
+        return nonce;
     }
 }

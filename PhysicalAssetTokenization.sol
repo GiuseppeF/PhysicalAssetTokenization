@@ -6,7 +6,8 @@ import "./PAT_Roles.sol";
 import "./PAT_Feedback.sol";
 import "./PAT_Signature.sol";
 
-contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback,  PAT_Signature {
+// A contract for tokenizing physical tokens with three roles and feedback management 
+contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback,  VerifySignature {
 
     // Global variables
     uint256 internal maxSelectionTime  = 1 *1 days;
@@ -41,8 +42,11 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
     // A mapping from token ID to fixed selling price
     mapping (uint256 => uint256) public tokenSellingPrice;
 
+    // A mapping to store the nonce to validate the proof of delivery at redemption phase
+    mapping (uint256 => bytes32) private redemptionNonce;
+
     // A counter for generating token IDs
-    uint256 public tokenCounter=0;
+    uint256 public tokenCounter;
 
     // An event to emit when an token is created by a vendor
     event TokenCreated(uint256 indexed tokenId, string name, string description, uint256 value, address owner);
@@ -97,6 +101,10 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         _;
     }
 
+    constructor () {
+        tokenCounter=0;
+    }
+
 // PHASE-1: Tokenization
 
     // A function to create a new token by a vendor
@@ -109,6 +117,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         onlyVendor() 
         returns (uint256) 
     {
+        require(_timeValidity > 1, "At least 1 day of validity");
             // Increment the token counter
             tokenCounter++;
 
@@ -148,7 +157,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
             require(msg.value > 0, "Zero Ether is not allowed");
             require(tokens[_tokenId].state == 0, "Token is not waiting for activation");
             require(tokens[_tokenId].originator == msg.sender, "You are not the originator");
-            require(warehouseTokenizators[_WTaddress].active == true);
+            require(warehouseTokenizators[_WTaddress].active == true, "Not a valid warehouseTokenizator");
             //require(_messageHash == getEIP191SignedHash(_tokenId, msg.value), "Invalid message hash");
             require(_messageHash == getMessageHash(_tokenId, msg.value), "Invalid message hash");
             //require(verifySignature(_messageHash, _signature, _WTaddress), "Invalid signature");
@@ -182,6 +191,9 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
             tokens[_tokenId].timeValidity   = block.timestamp + (tokens[_tokenId].timeValidity * 1 days);  // Days of validity
             tokens[_tokenId].state          = 1;
 
+            // set initial value as selling price
+            setTokenSellingPrice(_tokenId, tokens[_tokenId].initialValue);
+
             // set positive feedback to the originator
             _setPositiveFeedback(_tokenId, tokens[_tokenId].originator);
 
@@ -194,8 +206,8 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         ) external
         onlyUnactiveToken(_tokenId)
     {
-        require(msg.sender == tokens[_tokenId].originator);
-        require(tokens[_tokenId].WTquote > 0);
+        require(msg.sender == tokens[_tokenId].originator, "You not the originator");
+        require(tokens[_tokenId].WTquote > 0, "Service quote must be greater than zero");
         require(block.timestamp > requestTime[_tokenId]+maxActivationTime, "You are still in of time for activation");
 
         // Reset warehouse address
@@ -216,13 +228,13 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         emit requestAborted(_tokenId, msg.sender, quoteAmount);
     }
 
-// PHASE-2 Trading
+    // PHASE-2 Trading
 
     // A function for the token owner to set a fixed selling price for their token
     function setTokenSellingPrice(
         uint256 _tokenId, 
         uint256 _sellingPrice
-        ) external 
+        ) public 
         onlyTokenOwner(_tokenId) 
         onlyActiveToken(_tokenId) 
     {
@@ -239,8 +251,6 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         ) external payable nonReentrant
         onlyActiveToken(_tokenId) 
     {
-        // Check if the token has a fixed selling price
-        require(tokenSellingPrice[_tokenId] > 0, "Token does not have a fixed selling price.");
 
         // Check if the sent value matches the selling price
         require(msg.value == tokenSellingPrice[_tokenId], "Incorrect payment amount.");
@@ -257,7 +267,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         payable(_previousOwner).transfer(msg.value);
     }
 
-// PHASE-3 Redemption
+    // PHASE-3 Redemption
 
     // Redemption request
     function redemptionRequest(
@@ -265,6 +275,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         ) external 
         onlyTokenOwner(_tokenId) 
         onlyActiveToken(_tokenId) 
+        returns (bytes32 nonce)
     {
             //tokens[_tokenId].owner = address(0);
             tokens[_tokenId].state = 2;
@@ -272,7 +283,11 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
             // reset redemption countdown
             requestTime[_tokenId]=block.timestamp;
 
+            // redemption nonce generation
+            redemptionNonce[_tokenId] = generateRandomNonce(_tokenId);
+
             emit RedemptionRequested(_tokenId, tokens[_tokenId].warehouse);
+            return redemptionNonce[_tokenId];
     }
 
     // A function to burn a token by warehouse in case of proof of delivery
@@ -284,12 +299,12 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
     {
             // This action is only available when redemption has requested and warehouse provides proof of delivery
             //require(tokens[_tokenId].owner == address(0));
-            require(tokens[_tokenId].state == 2);
-            require(tokens[_tokenId].warehouse == msg.sender);
+            require(tokens[_tokenId].state == 2, "Not in redemption state");
+            require(tokens[_tokenId].warehouse == msg.sender, "Only selected WT can burn token");
             
-            // PROOF OF DELIVERY is a message "1" signed by token owner
-            require(_messageHash == getMessageHash(_tokenId, 1), "Invalid message hash");
-            require(verify(tokens[_tokenId].owner, _tokenId, 1, _signature), "Invalid signature");
+            // Proof of delivery is a mesage signed by token pretender that contains redemptionNonce
+            require(_messageHash == getMessageHash(_tokenId, getRedemptionNonce(_tokenId)), "Invalid message hash");
+            require(verify(tokens[_tokenId].owner, _messageHash, _signature), "Invalid signature");
             
             tokens[_tokenId].owner = address(0);
             // Set token state as burned
@@ -305,7 +320,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
             emit TokenReleased(_tokenId, tokens[_tokenId].warehouse);
     }
 
-// UTILITY FUNCTIONS
+    // UTILITY FUNCTIONS
 
     // Function to withdraw the quote amount associated with a token
     function withdrawQuote(
@@ -316,7 +331,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         // Ensure that the token has a WarehouseTokenizator and a quote amount
         require(tokens[_tokenId].warehouse != address(0), "No WarehouseTokenizator for this token");
         require(tokens[_tokenId].WTquote > 0, "No amount to withdrawal");
-        require(msg.sender == tokens[_tokenId].warehouse || msg.sender == tokens[_tokenId].warehouse);
+        require(msg.sender == tokens[_tokenId].warehouse || msg.sender == tokens[_tokenId].warehouse, "You are not allowed to do this");
 
         // Store the quote amount in a variable
         uint256 quoteAmount = tokens[_tokenId].WTquote;
@@ -337,9 +352,9 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         ) external
         returns (bool success)
     {
-        require(msg.sender == tokens[_tokenId].originator);
-        require(tokens[_tokenId].WTquote > 0);
-        require(tokens[_tokenId].state == 0);
+        require(msg.sender == tokens[_tokenId].originator, "Only originator can do this");
+        require(tokens[_tokenId].WTquote > 0, "Service quote must be >0");
+        require(tokens[_tokenId].state == 0, "Token has been activated");
         require(block.timestamp > requestTime[_tokenId]+maxActivationTime, "Still in time for activation");
         
         // ATTENZIONE:Bisogna distinguere questo feedback da quello di un asset non consegnato
@@ -359,8 +374,8 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         ) external
         returns (bool success)
     {
-        require(tokens[_tokenId].owner == msg.sender);
-        require(tokens[_tokenId].state == 2);
+        require(tokens[_tokenId].owner == msg.sender, "Only token owner can do this");
+        require(tokens[_tokenId].state == 2, "Not in redemption state");
         require(block.timestamp > requestTime[_tokenId]+maxRedemptionTime, "Redemption time has not expired");
 
        // Disable the token
@@ -379,9 +394,8 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         ) internal
         returns (bool success)
     {
-        require(tokens[_tokenId].state==3);
-        require(tokens[_tokenId].warehouse == msg.sender);
-
+        require(tokens[_tokenId].warehouse == msg.sender, "Only selected warehouse can do this");
+        require(tokens[_tokenId].state==3, "Token has not been burned");
         return _setPositiveFeedback(_tokenId, msg.sender);
     }
 
@@ -390,5 +404,15 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
     external 
     {
         revert("This contract does not accept Ether transactions.");
+    }
+
+    function getRedemptionNonce(
+        uint256 _tokenId
+        ) public view 
+        returns (bytes32 _redemptionNonce) 
+    {
+        require(tokens[_tokenId].state == 2, "Not in redemption state");
+        require(msg.sender == tokens[_tokenId].owner || msg.sender == tokens[_tokenId].warehouse, "Not allowed to get redemption nonce");
+        return redemptionNonce[_tokenId];
     }
 }
