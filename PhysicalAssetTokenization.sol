@@ -7,7 +7,7 @@ import "./PAT_Feedback.sol";
 import "./PAT_Signature.sol";
 
 // A contract for tokenizing physical tokens with three roles and feedback management 
-contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback,  VerifySignature {
+contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback,  PAT_Signature {
 
     // Global variables
     uint256 internal maxSelectionTime  = 1 *1 days;
