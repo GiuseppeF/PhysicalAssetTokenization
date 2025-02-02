@@ -1,29 +1,426 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Physical Asset Tokenization Interface</title>
-    <!-- Bootstrap CSS -->
-    <link
-      rel="stylesheet"
-      href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
-      integrity="sha384-MCiQnwq1kHfuN3zBhs0D3n2jeMo2XhxsTrHzZqZsWJlDqxBt8XJ3nqqeRoUpQF5F"
-      crossorigin="anonymous"
-    />
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <!-- React and ReactDOM -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/16.13.1/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/16.13.1/umd/react-dom.production.min.js"></script>
-    <!-- Babel to allow JSX in the browser -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
-    <!-- ethers.js v5 -->
-    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
-    <!-- Our contract ABI file is assumed to expose a global variable `contractABI` -->
-    <script src="contractABI.js"></script>
-    <!-- Our script file (it uses type=text/babel for JSX) -->
-    <script type="text/babel" src="script.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <title>Physical Asset Tokenization Interface</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Bootstrap CSS for responsive design -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f6f6f6;
+    }
+    /* Header style inspired by Vercel pages */
+    .header {
+      background-color: #0070f3;
+      color: #fff;
+      padding: 20px;
+      text-align: center;
+      position: relative;
+    }
+    .header img {
+      height: 50px;
+      position: absolute;
+      left: 20px;
+      top: 20px;
+    }
+    .container {
+      margin-top: 20px;
+    }
+    #eventLog { margin-top: 20px; }
+    .section-title { margin-top: 20px; margin-bottom: 10px; }
+    .tab-pane { padding: 15px; background-color: #fff; border: 1px solid #ddd; border-top: 0; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <img src="https://assets.vercel.com/image/upload/q_auto/front/favicon/vercel/180" alt="Logo">
+    <h1>Physical Asset Tokenization</h1>
+  </div>
+  
+  <div class="container">
+    <!-- Home section: select Ethereum network and contract address -->
+    <div id="home">
+      <h2 class="section-title">Network & Contract Setup</h2>
+      <form id="networkForm">
+        <div class="form-group">
+          <label for="networkSelect">Ethereum Network</label>
+          <select class="form-control" id="networkSelect">
+            <option value="sepolia" selected>Sepolia</option>
+            <option value="mainnet">Mainnet</option>
+            <option value="ropsten">Ropsten</option>
+            <option value="rinkeby">Rinkeby</option>
+            <option value="kovan">Kovan</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="contractAddress">Contract Address</label>
+          <input type="text" class="form-control" id="contractAddress" value="0x03F3C923eE87b89572849CACDb3e619292F618a7">
+        </div>
+        <button type="submit" class="btn btn-primary">Connect</button>
+      </form>
+    </div>
+    
+    <!-- Main application section (hidden until connection is made) -->
+    <div id="app" style="display:none;">
+      <!-- Tabs for each role -->
+      <ul class="nav nav-tabs" id="roleTabs" role="tablist">
+        <li class="nav-item">
+          <a class="nav-link active" id="vendor-tab" data-toggle="tab" href="#vendor" role="tab">Vendor</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" id="trader-tab" data-toggle="tab" href="#trader" role="tab">Trader</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" id="warehouse-tab" data-toggle="tab" href="#warehouse" role="tab">WarehouseTokenizator</a>
+        </li>
+      </ul>
+      <div class="tab-content" id="roleTabsContent">
+        <!-- Vendor Tab -->
+        <div class="tab-pane fade show active" id="vendor" role="tabpanel">
+          <h3>Vendor Actions</h3>
+          <!-- Create Asset Token -->
+          <div class="form-group">
+            <label for="vendorAssetName">Create Asset Token (Asset Name)</label>
+            <input type="text" class="form-control" id="vendorAssetName" placeholder="Enter asset name" pattern=".*\S.*">
+          </div>
+          <button id="vendorCreateAsset" class="btn btn-success mb-3">Create Asset Token</button>
+          <!-- Update Asset Token -->
+          <div class="form-group">
+            <label for="vendorTokenIdUpdate">Token ID to Update</label>
+            <input type="text" class="form-control" id="vendorTokenIdUpdate" placeholder="Enter token id" pattern="^\d+$">
+          </div>
+          <div class="form-group">
+            <label for="vendorNewAssetName">New Asset Name</label>
+            <input type="text" class="form-control" id="vendorNewAssetName" placeholder="Enter new asset name" pattern=".*\S.*">
+          </div>
+          <button id="vendorUpdateAsset" class="btn btn-warning mb-3">Update Asset Token</button>
+          <!-- Cancel Asset Token -->
+          <div class="form-group">
+            <label for="vendorTokenIdCancel">Token ID to Cancel</label>
+            <input type="text" class="form-control" id="vendorTokenIdCancel" placeholder="Enter token id" pattern="^\d+$">
+          </div>
+          <button id="vendorCancelAsset" class="btn btn-danger">Cancel Asset Token</button>
+        </div>
+        
+        <!-- Trader Tab -->
+        <div class="tab-pane fade" id="trader" role="tabpanel">
+          <h3>Trader Actions</h3>
+          <!-- Trade Asset Token -->
+          <div class="form-group">
+            <label for="traderTokenIdTrade">Token ID to Trade</label>
+            <input type="text" class="form-control" id="traderTokenIdTrade" placeholder="Enter token id" pattern="^\d+$">
+          </div>
+          <button id="traderTradeAsset" class="btn btn-success mb-3">Trade Asset Token</button>
+          <!-- Confirm Trade -->
+          <div class="form-group">
+            <label for="traderTokenIdConfirm">Token ID to Confirm Trade</label>
+            <input type="text" class="form-control" id="traderTokenIdConfirm" placeholder="Enter token id" pattern="^\d+$">
+          </div>
+          <button id="traderConfirmTrade" class="btn btn-info">Confirm Trade</button>
+        </div>
+        
+        <!-- WarehouseTokenizator Tab -->
+        <div class="tab-pane fade" id="warehouse" role="tabpanel">
+          <h3>WarehouseTokenizator Actions</h3>
+          <!-- Store Asset Token -->
+          <div class="form-group">
+            <label for="warehouseTokenIdStore">Token ID to Store</label>
+            <input type="text" class="form-control" id="warehouseTokenIdStore" placeholder="Enter token id" pattern="^\d+$">
+          </div>
+          <div class="form-group">
+            <label for="warehouseStorageLocation">Storage Location</label>
+            <input type="text" class="form-control" id="warehouseStorageLocation" placeholder="Enter storage location" pattern=".*\S.*">
+          </div>
+          <button id="warehouseStoreAsset" class="btn btn-success mb-3">Store Asset Token</button>
+          <!-- Retrieve Asset Token -->
+          <div class="form-group">
+            <label for="warehouseTokenIdRetrieve">Token ID to Retrieve</label>
+            <input type="text" class="form-control" id="warehouseTokenIdRetrieve" placeholder="Enter token id" pattern="^\d+$">
+          </div>
+          <button id="warehouseRetrieveAsset" class="btn btn-primary">Retrieve Asset Token</button>
+        </div>
+      </div>
+      
+      <!-- Asset Query Section (common) -->
+      <div id="assetQuery" class="mt-4">
+        <h3>Query Asset Details</h3>
+        <div class="form-group">
+          <label for="queryTokenId">Token ID</label>
+          <input type="text" class="form-control" id="queryTokenId" placeholder="Enter token id" pattern="^\d+$">
+        </div>
+        <button id="queryAssetDetails" class="btn btn-secondary">Get Asset Details</button>
+        <div id="queryResult" class="mt-3 alert alert-light"></div>
+      </div>
+      
+      <!-- Event log to display smart contract events -->
+      <div id="eventLog">
+        <h3 class="section-title">Event Log</h3>
+        <ul id="logList" class="list-group"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Required scripts: jQuery, Popper.js, Bootstrap JS, and ethers.js -->
+  <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
+  <script>
+    // Global variables for provider, signer, and contract instance
+    let provider, signer, contract;
+    // URL for the contract ABI file from your repository
+    const contractABIUrl = 'https://raw.githubusercontent.com/GiuseppeF/PhysicalAssetTokenization/refs/heads/main/contractABI.js';
+
+    // Helper function: Load the ABI from the given URL.
+    async function loadABI(url) {
+      const response = await fetch(url);
+      const abiText = await response.text();
+      // Attempt to extract the JSON array from the JS file (assuming it exports an array)
+      const match = abiText.match(/\[.*\]/s);
+      if (match) {
+        return JSON.parse(match[0]);
+      } else {
+        throw new Error("ABI not found in file.");
+      }
+    }
+
+    // Utility: Append messages to the event log
+    function addLog(message) {
+      const logList = document.getElementById('logList');
+      const li = document.createElement('li');
+      li.textContent = message;
+      li.className = 'list-group-item';
+      logList.appendChild(li);
+    }
+
+    // Handler for the connection form submission
+    document.getElementById('networkForm').addEventListener('submit', async function(event) {
+      event.preventDefault();
+      const network = document.getElementById('networkSelect').value;
+      const contractAddress = document.getElementById('contractAddress').value;
+      
+      // Initialize provider using ethers default provider for the selected network
+      provider = ethers.getDefaultProvider(network);
+      
+      // If MetaMask is available, use its provider
+      if (window.ethereum) {
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        signer = provider.getSigner();
+      }
+      
+      try {
+        const abi = await loadABI(contractABIUrl);
+        // Create contract instance (use signer if available for write functions)
+        contract = new ethers.Contract(contractAddress, abi, signer || provider);
+        // Hide the home setup and show the app
+        document.getElementById('home').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+        setupEventListeners();
+        setupRoleActions();
+      } catch (error) {
+        console.error("Error loading contract or ABI:", error);
+        alert("Failed to load contract. Check the console for details.");
+      }
+    });
+
+    // Set up smart contract event listeners for all events
+    function setupEventListeners() {
+      contract.on("AssetTokenized", (tokenId, assetName, event) => {
+        addLog(`AssetTokenized: ID ${tokenId}, Name: ${assetName}`);
+      });
+      contract.on("AssetUpdated", (tokenId, newAssetName, event) => {
+        addLog(`AssetUpdated: ID ${tokenId}, New Name: ${newAssetName}`);
+      });
+      contract.on("AssetCancelled", (tokenId, event) => {
+        addLog(`AssetCancelled: ID ${tokenId}`);
+      });
+      contract.on("AssetTraded", (tokenId, event) => {
+        addLog(`AssetTraded: ID ${tokenId}`);
+      });
+      contract.on("TradeConfirmed", (tokenId, event) => {
+        addLog(`TradeConfirmed: ID ${tokenId}`);
+      });
+      contract.on("AssetStored", (tokenId, storageLocation, event) => {
+        addLog(`AssetStored: ID ${tokenId}, Location: ${storageLocation}`);
+      });
+      contract.on("AssetRetrieved", (tokenId, event) => {
+        addLog(`AssetRetrieved: ID ${tokenId}`);
+      });
+    }
+
+    // Set up functions for each role’s actions and the query function.
+    function setupRoleActions() {
+      // --- Vendor Actions ---
+      // Create Asset Token
+      document.getElementById('vendorCreateAsset').addEventListener('click', async function() {
+        const assetName = document.getElementById('vendorAssetName').value;
+        if (!/.*\S.*/.test(assetName)) {
+          alert("Asset name cannot be empty.");
+          return;
+        }
+        try {
+          const tx = await contract.createAssetToken(assetName);
+          addLog("Vendor: Creating asset token, tx hash: " + tx.hash);
+          await tx.wait();
+          addLog("Vendor: Asset token created.");
+        } catch (error) {
+          console.error(error);
+          alert("Create Asset failed. See console for details.");
+        }
+      });
+
+      // Update Asset Token
+      document.getElementById('vendorUpdateAsset').addEventListener('click', async function() {
+        const tokenId = document.getElementById('vendorTokenIdUpdate').value;
+        const newAssetName = document.getElementById('vendorNewAssetName').value;
+        if (!/^\d+$/.test(tokenId)) {
+          alert("Token ID must be numeric.");
+          return;
+        }
+        if (!/.*\S.*/.test(newAssetName)) {
+          alert("New asset name cannot be empty.");
+          return;
+        }
+        try {
+          const tx = await contract.updateAssetToken(tokenId, newAssetName);
+          addLog("Vendor: Updating asset token, tx hash: " + tx.hash);
+          await tx.wait();
+          addLog("Vendor: Asset token updated.");
+        } catch (error) {
+          console.error(error);
+          alert("Update Asset failed. See console for details.");
+        }
+      });
+
+      // Cancel Asset Token
+      document.getElementById('vendorCancelAsset').addEventListener('click', async function() {
+        const tokenId = document.getElementById('vendorTokenIdCancel').value;
+        if (!/^\d+$/.test(tokenId)) {
+          alert("Token ID must be numeric.");
+          return;
+        }
+        try {
+          const tx = await contract.cancelAssetToken(tokenId);
+          addLog("Vendor: Cancelling asset token, tx hash: " + tx.hash);
+          await tx.wait();
+          addLog("Vendor: Asset token cancelled.");
+        } catch (error) {
+          console.error(error);
+          alert("Cancel Asset failed. See console for details.");
+        }
+      });
+
+      // --- Trader Actions ---
+      // Trade Asset Token
+      document.getElementById('traderTradeAsset').addEventListener('click', async function() {
+        const tokenId = document.getElementById('traderTokenIdTrade').value;
+        if (!/^\d+$/.test(tokenId)) {
+          alert("Token ID must be numeric.");
+          return;
+        }
+        try {
+          const tx = await contract.tradeAssetToken(tokenId);
+          addLog("Trader: Trading asset token, tx hash: " + tx.hash);
+          await tx.wait();
+          addLog("Trader: Asset token traded.");
+        } catch (error) {
+          console.error(error);
+          alert("Trade Asset failed. See console for details.");
+        }
+      });
+
+      // Confirm Trade
+      document.getElementById('traderConfirmTrade').addEventListener('click', async function() {
+        const tokenId = document.getElementById('traderTokenIdConfirm').value;
+        if (!/^\d+$/.test(tokenId)) {
+          alert("Token ID must be numeric.");
+          return;
+        }
+        try {
+          const tx = await contract.confirmTrade(tokenId);
+          addLog("Trader: Confirming trade, tx hash: " + tx.hash);
+          await tx.wait();
+          addLog("Trader: Trade confirmed.");
+        } catch (error) {
+          console.error(error);
+          alert("Confirm Trade failed. See console for details.");
+        }
+      });
+
+      // --- WarehouseTokenizator Actions ---
+      // Store Asset Token
+      document.getElementById('warehouseStoreAsset').addEventListener('click', async function() {
+        const tokenId = document.getElementById('warehouseTokenIdStore').value;
+        const storageLocation = document.getElementById('warehouseStorageLocation').value;
+        if (!/^\d+$/.test(tokenId)) {
+          alert("Token ID must be numeric.");
+          return;
+        }
+        if (!/.*\S.*/.test(storageLocation)) {
+          alert("Storage location cannot be empty.");
+          return;
+        }
+        try {
+          const tx = await contract.storeAssetToken(tokenId, storageLocation);
+          addLog("Warehouse: Storing asset token, tx hash: " + tx.hash);
+          await tx.wait();
+          addLog("Warehouse: Asset token stored.");
+        } catch (error) {
+          console.error(error);
+          alert("Store Asset failed. See console for details.");
+        }
+      });
+
+      // Retrieve Asset Token
+      document.getElementById('warehouseRetrieveAsset').addEventListener('click', async function() {
+        const tokenId = document.getElementById('warehouseTokenIdRetrieve').value;
+        if (!/^\d+$/.test(tokenId)) {
+          alert("Token ID must be numeric.");
+          return;
+        }
+        try {
+          const tx = await contract.retrieveAssetToken(tokenId);
+          addLog("Warehouse: Retrieving asset token, tx hash: " + tx.hash);
+          await tx.wait();
+          addLog("Warehouse: Asset token retrieved.");
+        } catch (error) {
+          console.error(error);
+          alert("Retrieve Asset failed. See console for details.");
+        }
+      });
+
+      // --- Asset Query Function ---
+      document.getElementById('queryAssetDetails').addEventListener('click', async function() {
+        const tokenId = document.getElementById('queryTokenId').value;
+        if (!/^\d+$/.test(tokenId)) {
+          alert("Token ID must be numeric.");
+          return;
+        }
+        try {
+          // Assumes getAssetDetails is a view function returning asset information
+          const details = await contract.getAssetDetails(tokenId);
+          document.getElementById('queryResult').textContent = "Asset Details: " + details;
+          addLog("Queried asset details for token ID " + tokenId);
+        } catch (error) {
+          console.error(error);
+          alert("Query failed. See console for details.");
+        }
+      });
+    }
+
+    // Final Check: 
+    // • Vendor functions: createAssetToken, updateAssetToken, cancelAssetToken  
+    // • Trader functions: tradeAssetToken, confirmTrade  
+    // • WarehouseTokenizator functions: storeAssetToken, retrieveAssetToken  
+    // • Common function: getAssetDetails  
+    // • Event listeners for: AssetTokenized, AssetUpdated, AssetCancelled, AssetTraded, TradeConfirmed, AssetStored, AssetRetrieved  
+    // If your smart contract adds new functions or events, please extend this code accordingly.
+  </script>
+</body>
 </html>
