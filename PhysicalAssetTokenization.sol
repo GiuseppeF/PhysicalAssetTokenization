@@ -117,7 +117,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         onlyVendor() 
         returns (uint256) 
     {
-        require(_timeValidity > 1, "At least 1 day of validity");
+        require(_timeValidity >= 1, "At least 1 day of validity");
             // Increment the token counter
             tokenCounter++;
 
@@ -204,6 +204,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
     function abortRequest(
         uint256 _tokenId
         ) external
+        nonReentrant 
         onlyUnactiveToken(_tokenId)
     {
         require(msg.sender == tokens[_tokenId].originator, "You not the originator");
@@ -238,6 +239,8 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         onlyTokenOwner(_tokenId) 
         onlyActiveToken(_tokenId) 
     {
+        require(_sellingPrice > 0, "Price must be > 0");
+
         // Set the selling price for the token
         tokenSellingPrice[_tokenId] = _sellingPrice;
 
@@ -331,7 +334,7 @@ contract PhysicalAssetTokenization is ReentrancyGuard, PAT_Roles, PAT_Feedback, 
         // Ensure that the token has a WarehouseTokenizator and a quote amount
         require(tokens[_tokenId].warehouse != address(0), "No WarehouseTokenizator for this token");
         require(tokens[_tokenId].WTquote > 0, "No amount to withdrawal");
-        require(msg.sender == tokens[_tokenId].warehouse || msg.sender == tokens[_tokenId].warehouse, "You are not allowed to do this");
+        require(msg.sender == tokens[_tokenId].warehouse, "You are not allowed to do this");
 
         // Store the quote amount in a variable
         uint256 quoteAmount = tokens[_tokenId].WTquote;
