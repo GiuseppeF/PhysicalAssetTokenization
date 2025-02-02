@@ -1,129 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Physical Asset Tokenization</title>
-  <!-- Bootstrap CSS -->
-  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-  <!-- Custom CSS -->
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-<div class="container mt-4">
-  <h1 class="mb-4 text-center">Physical Asset Tokenization Interface</h1>
-
-  <!-- Wallet Connection Section -->
-  <div class="card mb-4">
-    <div class="card-header">Wallet Connection</div>
-    <div class="card-body">
-      <button id="connectWallet" class="btn btn-primary">Connect Wallet</button>
-      <p id="walletAddress" class="mt-2"></p>
-      <p id="networkStatus" class="mt-2 text-info"></p>
-    </div>
-  </div>
-
-  <!-- Token Operations Section -->
-  <div class="card mb-4">
-    <div class="card-header">Token Operations</div>
-    <div class="card-body">
-      <!-- Create Token -->
-      <h5>Create Token</h5>
-      <form id="createTokenForm" class="mb-3">
-        <div class="form-row">
-          <div class="form-group col-md-6">
-            <input type="text" id="tokenName" class="form-control" placeholder="Token Name" required>
-          </div>
-          <div class="form-group col-md-6">
-            <input type="text" id="tokenDesc" class="form-control" placeholder="Description" required>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group col-md-6">
-            <input type="number" id="tokenValue" class="form-control" placeholder="Value (wei)" min="1" required>
-          </div>
-          <div class="form-group col-md-6">
-            <input type="number" id="tokenValidity" class="form-control" placeholder="Validity (seconds)" min="1" required>
-          </div>
-        </div>
-        <button type="submit" id="createTokenBtn" class="btn btn-success">Create Token</button>
-      </form>
-
-      <!-- Purchase Token -->
-      <h5>Purchase Token</h5>
-      <form id="purchaseTokenForm" class="mb-3">
-        <div class="form-group">
-          <input type="number" id="purchaseTokenId" class="form-control" placeholder="Token ID" min="0" required>
-        </div>
-        <button type="submit" id="purchaseTokenBtn" class="btn btn-success">Purchase Token</button>
-      </form>
-
-      <!-- Set Token Price -->
-      <h5>Set Token Price</h5>
-      <form id="setTokenPriceForm" class="mb-3">
-        <div class="form-row">
-          <div class="form-group col-md-6">
-            <input type="number" id="priceTokenId" class="form-control" placeholder="Token ID" min="0" required>
-          </div>
-          <div class="form-group col-md-6">
-            <input type="number" id="newPrice" class="form-control" placeholder="Price (wei)" min="1" required>
-          </div>
-        </div>
-        <button type="submit" id="setTokenPriceBtn" class="btn btn-success">Set Price</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Token Actions Section -->
-  <div class="card mb-4">
-    <div class="card-header">Token Actions</div>
-    <div class="card-body">
-      <!-- Activate Token -->
-      <form id="activateTokenForm" class="mb-3">
-        <div class="form-group">
-          <input type="number" id="activateTokenId" class="form-control" placeholder="Token ID" min="0" required>
-        </div>
-        <button type="submit" id="activateTokenBtn" class="btn btn-success">Activate Token</button>
-      </form>
-      <!-- Redemption Request -->
-      <form id="redemptionRequestForm">
-        <div class="form-group">
-          <input type="number" id="redeemTokenId" class="form-control" placeholder="Token ID" min="0" required>
-        </div>
-        <button type="submit" id="redemptionRequestBtn" class="btn btn-success">Request Redemption</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Token Details Section -->
-  <div class="card mb-4">
-    <div class="card-header">Token Details</div>
-    <div class="card-body">
-      <form id="getTokenDetailsForm">
-        <div class="form-group">
-          <input type="number" id="queryTokenId" class="form-control" placeholder="Token ID" min="0" required>
-        </div>
-        <button type="submit" id="getTokenDetailsBtn" class="btn btn-info">Get Details</button>
-      </form>
-      <div id="tokenDetails" class="mt-3"></div>
-    </div>
-  </div>
-
-  <!-- Transaction History Section -->
-  <div class="card mb-4">
-    <div class="card-header">Transaction History</div>
-    <div class="card-body">
-      <ul id="txHistory" class="list-group"></ul>
-    </div>
-  </div>
-
-  <!-- Notifications -->
-  <div id="notifications" class="fixed-bottom m-4"></div>
-</div>
-
-<!-- Dependencies -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js">
-<script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
-<script src="contractABI.js"></script>
-<script src="script.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Physical Asset Tokenization Interface</title>
+    <!-- Bootstrap CSS -->
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
+      integrity="sha384-MCiQnwq1kHfuN3zBhs0D3n2jeMo2XhxsTrHzZqZsWJlDqxBt8XJ3nqqeRoUpQF5F"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- React and ReactDOM -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/16.13.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/16.13.1/umd/react-dom.production.min.js"></script>
+    <!-- Babel to allow JSX in the browser -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    <!-- ethers.js v5 -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <!-- Our contract ABI file is assumed to expose a global variable `contractABI` -->
+    <script src="contractABI.js"></script>
+    <!-- Our script file (it uses type=text/babel for JSX) -->
+    <script type="text/babel" src="script.js"></script>
+  </body>
 </html>
