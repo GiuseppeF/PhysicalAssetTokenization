@@ -2,11 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Physical Asset Tokenization Interface</title>
-  <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Bootstrap CSS for responsive design -->
+  <title>Physical Asset Tokenization</title>
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
   <style>
     body {
       margin: 0;
@@ -208,12 +207,17 @@
       // Initialize provider using ethers default provider for the selected network
       provider = ethers.getDefaultProvider(network);
       
-      // If MetaMask is available, use its provider
+      // Now ethers is defined
       if (window.ethereum) {
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
-        provider = new ethers.providers.Web3Provider(window.ethereum);
-        signer = provider.getSigner();
-      }
+        // Using ethers.js to set up provider and signer
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        provider.send("eth_requestAccounts", []).then(() => {
+          const signer = provider.getSigner();
+          console.log("Connected account:", signer.getAddress());
+        });
+      } else {
+        console.log("No Ethereum object found. Please install MetaMask.");
+      }  
       
       try {
         const abi = await loadABI(contractABIUrl);
@@ -404,7 +408,7 @@
           return;
         }
         try {
-          // Assumes getAssetDetails is a view function returning asset information
+          // getAssetDetails is a view function returning asset information
           const details = await contract.getAssetDetails(tokenId);
           document.getElementById('queryResult').textContent = "Asset Details: " + details;
           addLog("Queried asset details for token ID " + tokenId);
@@ -414,14 +418,6 @@
         }
       });
     }
-
-    // Final Check: 
-    // • Vendor functions: createAssetToken, updateAssetToken, cancelAssetToken  
-    // • Trader functions: tradeAssetToken, confirmTrade  
-    // • WarehouseTokenizator functions: storeAssetToken, retrieveAssetToken  
-    // • Common function: getAssetDetails  
-    // • Event listeners for: AssetTokenized, AssetUpdated, AssetCancelled, AssetTraded, TradeConfirmed, AssetStored, AssetRetrieved  
-    // If your smart contract adds new functions or events, please extend this code accordingly.
   </script>
 </body>
 </html>
