@@ -6,8 +6,8 @@
   <title>Physical Asset Tokenization</title>
   <!-- Bootstrap CSS for responsive design -->
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
-  <!-- Load ethers.js only once here -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
+  <!-- Load the ethers UMD build (version 5.7.2 used as an example) with defer -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js" defer></script>
   <style>
     body {
       margin: 0;
@@ -171,8 +171,9 @@
   <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"></script>
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
-
-  <script>
+  
+  <!-- Custom script; using defer ensures this runs after the deferred ethers.js script -->
+  <script defer>
     // Global variables for provider, signer, and contract instance
     let provider, signer, contract;
     // URL for the contract ABI file from your repository
@@ -206,8 +207,7 @@
       const network = document.getElementById('networkSelect').value;
       const contractAddress = document.getElementById('contractAddress').value;
       
-      // Initialize provider using ethers default provider for the selected network
-      // (This could be used for read-only calls)
+      // Initialize provider using ethers default provider for the selected network (for read-only calls)
       provider = ethers.getDefaultProvider(network);
       
       if (window.ethereum) {
@@ -215,7 +215,7 @@
         provider = new ethers.providers.Web3Provider(window.ethereum);
         // Request account access from MetaMask
         await provider.send("eth_requestAccounts", []);
-        // Get the signer from the global provider and assign to the global variable
+        // Get the signer from the global provider
         signer = provider.getSigner();
         signer.getAddress().then(address => {
           console.log("Connected account:", address);
@@ -226,7 +226,7 @@
       
       try {
         const abi = await loadABI(contractABIUrl);
-        // Create contract instance using signer if available; otherwise use provider
+        // Create contract instance using signer if available; otherwise, use provider
         contract = new ethers.Contract(contractAddress, abi, signer || provider);
         // Hide the network setup section and show the main application section
         document.getElementById('home').style.display = 'none';
@@ -413,7 +413,6 @@
           return;
         }
         try {
-          // getAssetDetails is assumed to be a view function returning asset information
           const details = await contract.getAssetDetails(tokenId);
           document.getElementById('queryResult').textContent = "Asset Details: " + details;
           addLog("Queried asset details for token ID " + tokenId);
