@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/PhysicalAssetTokenization/static/css/main.65f95f30.css",
+    "main.js": "/PhysicalAssetTokenization/static/js/main.c3f4f7fe.js",
+    "static/js/453.7d602bfa.chunk.js": "/PhysicalAssetTokenization/static/js/453.7d602bfa.chunk.js",
+    "index.html": "/PhysicalAssetTokenization/index.html",
+    "main.65f95f30.css.map": "/PhysicalAssetTokenization/static/css/main.65f95f30.css.map",
+    "main.c3f4f7fe.js.map": "/PhysicalAssetTokenization/static/js/main.c3f4f7fe.js.map",
+    "453.7d602bfa.chunk.js.map": "/PhysicalAssetTokenization/static/js/453.7d602bfa.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.65f95f30.css",
+    "static/js/main.c3f4f7fe.js"
+  ]
+}
